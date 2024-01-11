@@ -1,5 +1,3 @@
-'use strict';
-
 import axios from 'axios';
 import iziToast from 'izitoast';
 import 'izitoast/dist/css/iziToast.min.css';
@@ -9,7 +7,6 @@ import 'simplelightbox/dist/simple-lightbox.min.css';
 const API_KEY = '41511602-ac1f0d864a13fd01c911f294b';
 const searchFormElement = document.querySelector('.search-form');
 const galleryElement = document.querySelector('.gallery');
-const textInputElement = document.querySelector('.search-input');
 const lightbox = new SimpleLightbox('.gallery a', {
   captionsData: 'alt',
   captionDelay: 250,
@@ -18,6 +15,9 @@ const lightbox = new SimpleLightbox('.gallery a', {
 const loaderElement = document.querySelector('.loader');
 const loadMoreButton = document.querySelector('.load-more');
 let currentPage = 1;
+let totalHits = 0;
+let searchQuery = '';
+let imagesLoaded = 0;
 
 loaderElement.style.display = 'none';
 loadMoreButton.classList.remove('visible');
@@ -27,9 +27,9 @@ loadMoreButton.addEventListener('click', loadMoreImages);
 
 async function handleFormSubmit(event) {
   event.preventDefault();
-  const inputValue = textInputElement.value.trim();
+  searchQuery = event.target.querySelector('.search-input').value.trim();
 
-  if (!inputValue) {
+  if (!searchQuery) {
     iziToast.warning({
       title: 'Warning!',
       message: 'Please enter image name!',
@@ -46,7 +46,7 @@ async function handleFormSubmit(event) {
     const response = await axios.get('https://pixabay.com/api/', {
       params: {
         key: API_KEY,
-        q: inputValue,
+        q: searchQuery,
         image_type: 'photo',
         orientation: 'horizontal',
         safesearch: true,
@@ -68,16 +68,17 @@ async function handleFormSubmit(event) {
       return;
     }
 
+    totalHits = data.totalHits;
+    imagesLoaded = data.hits.length;
     renderImages(data.hits);
     lightbox.refresh();
 
-    if (currentPage * 40 >= data.totalHits) {
-      hideLoadMoreButton();
-      iziToast.info({
-        message: "We're sorry, but you've reached the end of search results.",
-        position: 'topRight',
-      });
-    } else {
+    iziToast.info({
+      message: `We found ${totalHits} images.`,
+      position: 'topRight',
+    });
+
+    if (totalHits > 40) {
       showLoadMoreButton();
     }
   } catch (error) {
@@ -99,8 +100,6 @@ function renderImages(images) {
   });
 
   galleryElement.appendChild(fragment);
-
-  currentPage++;
 }
 
 function createImageCard(image) {
@@ -109,15 +108,15 @@ function createImageCard(image) {
 
   imageCardElement.innerHTML = `
     <a class="gallery-link" href="${image.largeImageURL}">
-        <img class="card-image" src="${image.webformatURL}" alt="${image.tags}" loading="lazy">
-      </a>
-      <div class="card-info">
-        <p class="card-text"><b>Likes:</b> ${image.likes}</p>
-        <p class="card-text"><b>Views:</b> ${image.views}</p>
-        <p class="card-text"><b>Comments:</b> ${image.comments}</p>
-        <p class="card-text"><b>Downloads:</b> ${image.downloads}</p>
-      </div>
-    `;
+      <img class="card-image" src="${image.webformatURL}" alt="${image.tags}" loading="lazy">
+    </a>
+    <div class="card-info">
+      <p class="card-text"><b>Likes:</b> ${image.likes}</p>
+      <p class="card-text"><b>Views:</b> ${image.views}</p>
+      <p class="card-text"><b>Comments:</b> ${image.comments}</p>
+      <p class="card-text"><b>Downloads:</b> ${image.downloads}</p>
+    </div>
+  `;
 
   return imageCardElement;
 }
@@ -129,12 +128,6 @@ function clearGallery() {
 }
 
 async function loadMoreImages() {
-  const inputValue = textInputElement.value.trim();
-
-  if (!inputValue) {
-    return;
-  }
-
   showLoader();
   hideLoadMoreButton();
 
@@ -142,11 +135,11 @@ async function loadMoreImages() {
     const response = await axios.get('https://pixabay.com/api/', {
       params: {
         key: API_KEY,
-        q: inputValue,
+        q: searchQuery,
         image_type: 'photo',
         orientation: 'horizontal',
         safesearch: true,
-        page: currentPage,
+        page: currentPage + 1,
         per_page: 40,
       },
     });
@@ -156,17 +149,24 @@ async function loadMoreImages() {
     const data = response.data;
 
     if (data.hits.length === 0) {
-      hideLoadMoreButton();
       return;
     }
+
+    currentPage++;
+
+    if (imagesLoaded + data.hits.length > totalHits) {
+      data.hits = data.hits.slice(0, totalHits - imagesLoaded);
+    }
+
+    imagesLoaded += data.hits.length;
 
     renderImages(data.hits);
     lightbox.refresh();
 
-    if (currentPage * 40 >= data.totalHits) {
+    if (imagesLoaded >= totalHits) {
       hideLoadMoreButton();
       iziToast.info({
-        message: "We're sorry, but you've reached the end of search results.",
+        message: `We're sorry, but you've reached the end of search results.`,
         position: 'topRight',
       });
     } else {
